@@ -1,0 +1,187 @@
+# GreenAlert · Entorno local completo
+#   cp .env.example .env   (y reemplace los secretos)
+#   docker compose up -d --build
+# Solo se publican en el host: frontend (8080), api-gateway (3000) y la interfaz de Mailpit (8025).
+
+x-service: &service
+  restart: unless-stopped
+  networks: [internal]
+  depends_on:
+    mysql:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options: { max-size: '10m', max-file: '3' }
+
+x-common-env: &common-env
+  NODE_ENV: ${NODE_ENV:-production}
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Defina INTERNAL_API_KEY en .env}
+  HTTP_TIMEOUT_MS: ${HTTP_TIMEOUT_MS:-3000}
+  DB_HOST: mysql
+  DB_PORT: '3306'
+  USERS_SERVICE_URL: http://users:3001
+  REPORTS_SERVICE_URL: http://reports:3002
+  MULTIMEDIA_SERVICE_URL: http://multimedia:3003
+  GEOLOCATION_SERVICE_URL: http://geolocation:3004
+  AI_SERVICE_URL: http://ai:3005
+  NOTIFICATIONS_SERVICE_URL: http://notifications:3006
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    command: ['--character-set-server=utf8mb4', '--collation-server=utf8mb4_unicode_ci']
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Defina MYSQL_ROOT_PASSWORD en .env}
+      USERS_DB_PASSWORD: ${USERS_DB_PASSWORD:?}
+      REPORTS_DB_PASSWORD: ${REPORTS_DB_PASSWORD:?}
+      MULTIMEDIA_DB_PASSWORD: ${MULTIMEDIA_DB_PASSWORD:?}
+      GEOLOCATION_DB_PASSWORD: ${GEOLOCATION_DB_PASSWORD:?}
+      AI_DB_PASSWORD: ${AI_DB_PASSWORD:?}
+      NOTIFICATIONS_DB_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD:?}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - mysql-backups:/backups
+      - ./infrastructure/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./infrastructure/mysql/backup:/backup:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [internal]
+
+  mailpit:
+    # Servidor SMTP SOLO para desarrollo: captura los correos y los muestra en http://localhost:8025
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports: ['127.0.0.1:8025:8025']
+    networks: [internal, public]
+
+  users:
+    <<: *service
+    build: { context: ., dockerfile: services/users/Dockerfile }
+    image: greenalert/users:local
+    environment:
+      <<: *common-env
+      PORT: '3001'
+      DB_NAME: greenalert_users
+      DB_USER: ga_users
+      DB_PASSWORD: ${USERS_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET en .env}
+      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS:-3600}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+
+  reports:
+    <<: *service
+    build: { context: ., dockerfile: services/reports/Dockerfile }
+    image: greenalert/reports:local
+    environment:
+      <<: *common-env
+      PORT: '3002'
+      DB_NAME: greenalert_reports
+      DB_USER: ga_reports
+      DB_PASSWORD: ${REPORTS_DB_PASSWORD}
+      OUTBOX_INTERVAL_MS: ${OUTBOX_INTERVAL_MS:-5000}
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-10}
+
+  multimedia:
+    <<: *service
+    build: { context: ., dockerfile: services/multimedia/Dockerfile }
+    image: greenalert/multimedia:local
+    environment:
+      <<: *common-env
+      PORT: '3003'
+      DB_NAME: greenalert_multimedia
+      DB_USER: ga_multimedia
+      DB_PASSWORD: ${MULTIMEDIA_DB_PASSWORD}
+      UPLOAD_DIR: /data/uploads
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-5}
+      MAX_FILES_PER_REPORT: ${MAX_FILES_PER_REPORT:-5}
+    volumes:
+      - uploads:/data/uploads
+
+  geolocation:
+    <<: *service
+    build: { context: ., dockerfile: services/geolocation/Dockerfile }
+    image: greenalert/geolocation:local
+    environment:
+      <<: *common-env
+      PORT: '3004'
+      DB_NAME: greenalert_geolocation
+      DB_USER: ga_geolocation
+      DB_PASSWORD: ${GEOLOCATION_DB_PASSWORD}
+
+  ai:
+    <<: *service
+    build: { context: ., dockerfile: services/ai/Dockerfile }
+    image: greenalert/ai:local
+    environment:
+      <<: *common-env
+      PORT: '3005'
+      DB_NAME: greenalert_ai
+      DB_USER: ga_ai
+      DB_PASSWORD: ${AI_DB_PASSWORD}
+      AI_PROVIDER: ${AI_PROVIDER:-heuristic}
+      AI_MODEL_URL: ${AI_MODEL_URL:-}
+      AI_MODEL_TIMEOUT_MS: ${AI_MODEL_TIMEOUT_MS:-10000}
+
+  notifications:
+    <<: *service
+    build: { context: ., dockerfile: services/notifications/Dockerfile }
+    image: greenalert/notifications:local
+    environment:
+      <<: *common-env
+      PORT: '3006'
+      DB_NAME: greenalert_notifications
+      DB_USER: ga_notifications
+      DB_PASSWORD: ${NOTIFICATIONS_DB_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-GreenAlert <no-reply@greenalert.local>}
+      NOTIFICATIONS_MAX_ATTEMPTS: ${NOTIFICATIONS_MAX_ATTEMPTS:-6}
+
+  api-gateway:
+    build: { context: ., dockerfile: api-gateway/Dockerfile }
+    image: greenalert/api-gateway:local
+    restart: unless-stopped
+    ports: ['${GATEWAY_PORT:-3000}:3000']
+    environment:
+      <<: *common-env
+      PORT: '3000'
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-300}
+      RATE_LIMIT_AUTH_MAX: ${RATE_LIMIT_AUTH_MAX:-20}
+      PROXY_TIMEOUT_MS: ${PROXY_TIMEOUT_MS:-15000}
+      REVOCATION_CACHE_TTL_MS: ${REVOCATION_CACHE_TTL_MS:-30000}
+      TRUST_PROXY: '1'
+    # El gateway arranca aunque algún servicio no esté listo: responde 503 para ese servicio (degradación controlada).
+    depends_on:
+      users: { condition: service_started }
+    networks: [internal, public]
+
+  frontend:
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    image: greenalert/frontend:local
+    restart: unless-stopped
+    ports: ['${FRONTEND_PORT:-8080}:8080']
+    depends_on:
+      api-gateway: { condition: service_started }
+    networks: [public]
+
+networks:
+  public: {}
+  internal:
+    internal: true
+
+volumes:
+  mysql-data: {}
+  mysql-backups: {}
+  uploads: {}

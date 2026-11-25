@@ -1,0 +1,41 @@
+{
+  "name": "greenalert",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GreenAlert – Plataforma de Monitoreo Ambiental Ciudadano (Mocoa, Putumayo)",
+  "workspaces": [
+    "api-gateway",
+    "services/users",
+    "services/reports",
+    "services/multimedia",
+    "services/geolocation",
+    "services/ai",
+    "services/notifications",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:cov": "npm run test:cov --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\"",
+    "test:integration:cov": "npm run test:integration:cov --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.0",
+    "eslint-plugin-sonarjs": "^3.0.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

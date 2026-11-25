@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/coverage
+**/reports/junit
+**/*.tsbuildinfo
+.git
+.github
+docs
+**/.env
+**/.env.*
+!.env.example
+**/uploads

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+**/reports/junit/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+uploads/
+*.log
+.DS_Store
+.scannerwork/
+.vscode/*
+!.vscode/extensions.json
+coverage-integration/
